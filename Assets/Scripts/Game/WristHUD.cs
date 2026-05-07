@@ -37,6 +37,11 @@ namespace SpaceClimb
         TMP_Text distanceLabel;
         TMP_Text timerLabel;
         TMP_Text bestLabel;
+        // HP bar — built in BuildUI, fed each frame from HealthSystem if present.
+        Image hpBarBg;
+        Image hpBarFill;
+        TMP_Text hpLabel;
+        HealthSystem health;
 
         void Awake()
         {
@@ -61,6 +66,8 @@ namespace SpaceClimb
             // aligned to the same reference altitude.
             var level = FindAnyObjectByType<LevelManager>();
             if (level != null && level.SpawnPoint != null) spawnY = level.SpawnPoint.position.y;
+            // Resolve HealthSystem on the same rig — null is fine, we just hide the bar.
+            health = FindAnyObjectByType<HealthSystem>();
         }
 
         void Update()
@@ -97,6 +104,24 @@ namespace SpaceClimb
                     ? $"<size=70%>BEST {Mathf.FloorToInt(best/60f):00}:{(best - Mathf.FloorToInt(best/60f)*60f):00.00}</size>"
                     : "<size=70%>BEST —</size>";
             }
+
+            // Health bar. Hidden when there's no HealthSystem so non-damage
+            // builds don't show an empty bar.
+            bool showHp = health != null && health.enabled;
+            if (hpBarBg != null) hpBarBg.gameObject.SetActive(showHp);
+            if (hpBarFill != null) hpBarFill.gameObject.SetActive(showHp);
+            if (hpLabel != null) hpLabel.gameObject.SetActive(showHp);
+            if (showHp && hpBarFill != null)
+            {
+                float pct = Mathf.Clamp01(health.Health / Mathf.Max(1f, health.MaxHealth));
+                // Fill from left: scale x of the bar (anchored left, width = pct * full).
+                hpBarFill.rectTransform.sizeDelta = new Vector2(116f * pct, hpBarFill.rectTransform.sizeDelta.y);
+                // Color shifts from cyan → amber → red as HP drops.
+                if (pct > 0.6f) hpBarFill.color = new Color(0.4f, 0.95f, 1f, 1f);
+                else if (pct > 0.3f) hpBarFill.color = new Color(1f, 0.75f, 0.25f, 1f);
+                else hpBarFill.color = new Color(1f, 0.30f, 0.20f, 1f);
+                if (hpLabel != null) hpLabel.text = $"HP {Mathf.CeilToInt(health.Health)}/{Mathf.CeilToInt(health.MaxHealth)}";
+            }
         }
 
         void BuildUI()
@@ -110,7 +135,7 @@ namespace SpaceClimb
             canvas.renderMode = RenderMode.WorldSpace;
             canvasGO.AddComponent<CanvasScaler>();
             var rt = canvasGO.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(120, 70);
+            rt.sizeDelta = new Vector2(120, 92);     // taller — extra space for HP row at the bottom
             canvasGO.transform.localScale = Vector3.one * canvasScale;
 
             var bg = new GameObject("BG", typeof(RectTransform));
@@ -124,12 +149,46 @@ namespace SpaceClimb
             bgImg.color = barColor;
             bgImg.raycastTarget = false;
 
-            altitudeLabel = MakeLabel("Alt", canvasGO.transform, new Vector2(0, 22), new Vector2(120, 18), 9f, valueColor);
-            distanceLabel = MakeLabel("Dist", canvasGO.transform, new Vector2(0, 5), new Vector2(120, 18), 9f, valueColor);
-            timerLabel    = MakeLabel("Time", canvasGO.transform, new Vector2(0, -12), new Vector2(120, 14), 11f, speedrunColor);
-            bestLabel     = MakeLabel("Best", canvasGO.transform, new Vector2(0, -25), new Vector2(120, 10), 7f, labelColor);
+            altitudeLabel = MakeLabel("Alt", canvasGO.transform, new Vector2(0, 33), new Vector2(120, 18), 9f, valueColor);
+            distanceLabel = MakeLabel("Dist", canvasGO.transform, new Vector2(0, 16), new Vector2(120, 18), 9f, valueColor);
+            timerLabel    = MakeLabel("Time", canvasGO.transform, new Vector2(0, -1), new Vector2(120, 14), 11f, speedrunColor);
+            bestLabel     = MakeLabel("Best", canvasGO.transform, new Vector2(0, -14), new Vector2(120, 10), 7f, labelColor);
             timerLabel.gameObject.SetActive(false);
             bestLabel.gameObject.SetActive(false);
+
+            // HP bar — bottom strip. Background frame + foreground fill anchored
+            // to left so we can grow/shrink the fill width as HP changes.
+            BuildHpBar(canvasGO.transform);
+        }
+
+        void BuildHpBar(Transform parent)
+        {
+            // Background (full width, dark)
+            var bg = new GameObject("HpBg", typeof(RectTransform));
+            bg.transform.SetParent(parent, false);
+            var bgRT = bg.GetComponent<RectTransform>();
+            bgRT.anchorMin = bgRT.anchorMax = new Vector2(0.5f, 0.5f);
+            bgRT.pivot = new Vector2(0.5f, 0.5f);
+            bgRT.sizeDelta = new Vector2(120, 8);
+            bgRT.anchoredPosition = new Vector2(0, -32);
+            hpBarBg = bg.AddComponent<Image>();
+            hpBarBg.color = new Color(0.05f, 0.07f, 0.10f, 0.9f);
+            hpBarBg.raycastTarget = false;
+
+            // Foreground fill, anchored to LEFT so width animates from the left edge
+            var fill = new GameObject("HpFill", typeof(RectTransform));
+            fill.transform.SetParent(parent, false);
+            var fillRT = fill.GetComponent<RectTransform>();
+            fillRT.anchorMin = fillRT.anchorMax = new Vector2(0.5f, 0.5f);
+            fillRT.pivot = new Vector2(0f, 0.5f);
+            fillRT.sizeDelta = new Vector2(116, 6);
+            fillRT.anchoredPosition = new Vector2(-58, -32);
+            hpBarFill = fill.AddComponent<Image>();
+            hpBarFill.color = new Color(0.4f, 0.95f, 1f, 1f);
+            hpBarFill.raycastTarget = false;
+
+            // Numeric label below the bar
+            hpLabel = MakeLabel("HpLabel", parent, new Vector2(0, -42), new Vector2(120, 8), 6f, valueColor);
         }
 
         TMP_Text MakeLabel(string name, Transform parent, Vector2 pos, Vector2 size, float fontSize, Color color)

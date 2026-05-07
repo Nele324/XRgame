@@ -1134,6 +1134,17 @@
                 },
                 {
                     "name": "",
+                    "id": "c41a6b88-7e10-4b17-8c5d-d11e9a423a01",
+                    "path": "<XRController>{LeftHand}/primaryButton",
+                    "interactions": "Press",
+                    "processors": "",
+                    "groups": "",
+                    "action": "UI Press",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
                     "id": "a5bf6a12-a026-46d1-a793-7252c49aaf66",
                     "path": "<MetaAimHand>{LeftHand}/indexPressed",
                     "interactions": "",
@@ -2227,6 +2238,17 @@
                 },
                 {
                     "name": "",
+                    "id": "d52e7c19-9f6e-4ad8-b4f7-e34bba6c2b02",
+                    "path": "<XRController>{RightHand}/primaryButton",
+                    "interactions": "Press",
+                    "processors": "",
+                    "groups": "",
+                    "action": "UI Press",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
                     "id": "1652c26e-d835-461f-b46b-55b146fd9bba",
                     "path": "<MetaAimHand>{RightHand}/indexPressed",
                     "interactions": "",
@@ -2975,6 +2997,28 @@
                     "id": "67f51768-1493-4444-b118-82d398a16fdd",
                     "path": "*/{Cancel}",
                     "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Cancel",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "a14b21e8-4c91-4f1d-9db6-1e9b8c4a7301",
+                    "path": "<XRController>{LeftHand}/secondaryButton",
+                    "interactions": "Press",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Cancel",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "b25c32f9-5da2-4e2e-aec7-2faa9d5b8412",
+                    "path": "<XRController>{RightHand}/secondaryButton",
+                    "interactions": "Press",
                     "processors": "",
                     "groups": "",
                     "action": "Cancel",

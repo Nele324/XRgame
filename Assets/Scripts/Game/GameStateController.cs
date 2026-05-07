@@ -1,6 +1,8 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
+using UnityEngine.InputSystem.XR;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using TMPro;
@@ -37,6 +39,11 @@ namespace SpaceClimb
         [SerializeField] TMP_Text deathCauseLabel;
         [SerializeField] WinAnimation winAnimation;        // optional — falls back to plain fade if missing
         [SerializeField] float fadeDuration = 0.5f;
+        [Tooltip("World-space canvas that hosts the pause/death/win panels. " +
+            "Lives outside the head-locked FadeCanvas so menus stay put when " +
+            "the player turns their head. Anchored in front of the camera each " +
+            "time a panel opens via WorldMenuPlacement.AnchorNow().")]
+        [SerializeField] WorldMenuPlacement menuPanelPlacement;
 
         [Header("Input")]
         [SerializeField] InputActionReference pauseAction;
@@ -50,6 +57,7 @@ namespace SpaceClimb
         bool isPaused;
         float runStartTime;
         float runEndTime;
+        int lastPauseInputFrame = -1;
 
         public bool IsRunActive => !isDying && !hasWon && !isPaused;
         /// <summary>Seconds elapsed since the run started, or final time if the run ended.</summary>
@@ -94,11 +102,38 @@ namespace SpaceClimb
 
         // ===== Pause =====
 
-        void OnPausePressed(InputAction.CallbackContext _)
+        void OnPausePressed(InputAction.CallbackContext _) => HandlePauseInput();
+
+        void HandlePauseInput()
         {
+            // Dedupe: action callback and polling fallback can both fire same frame.
+            if (Time.frameCount == lastPauseInputFrame) return;
+            lastPauseInputFrame = Time.frameCount;
             if (hasWon || isDying) return;
             if (isPaused) Resume();
             else Pause();
+        }
+
+        void Update()
+        {
+            // Direct-poll fallback for the secondary buttons (Y on left, B on right).
+            // Why: the action-asset binding can fail to fire in builds when the
+            // InputActionManager hasn't auto-enabled the asset, when the action
+            // reference's GUID drifts after asset edits, or when the XR UI module
+            // consumes the event first. Polling the device's secondaryButton
+            // directly is unconditional — if the controller is connected and the
+            // user presses Y or B, this fires.
+            for (int i = 0; i < InputSystem.devices.Count; i++)
+            {
+                var dev = InputSystem.devices[i];
+                if (!(dev is XRController)) continue;
+                var btn = dev.TryGetChildControl<ButtonControl>("secondaryButton");
+                if (btn != null && btn.wasPressedThisFrame)
+                {
+                    HandlePauseInput();
+                    return;
+                }
+            }
         }
 
         public void Pause()
@@ -106,6 +141,15 @@ namespace SpaceClimb
             if (isPaused || hasWon || isDying) return;
             isPaused = true;
             if (rig != null) rig.FreezePhysics(true);
+            // Fade canvas was at alpha 0 the whole game (set in Awake) — without
+            // this, SetActive(true) on the panel makes it active but the parent
+            // CanvasGroup keeps it invisible AND non-raycastable, which is what
+            // made pause feel like a freeze. Force the panel visible + clickable.
+            ShowOverlayCanvas(0.92f);
+            // Re-anchor the world-space menu canvas in front of where the player
+            // is currently looking. Without this the panel stays wherever it
+            // was last placed — fine if the player hasn't turned, jarring if they have.
+            if (menuPanelPlacement != null) menuPanelPlacement.AnchorNow();
             if (pausePanel != null) pausePanel.SetActive(true);
         }
 
@@ -114,7 +158,24 @@ namespace SpaceClimb
             if (!isPaused) return;
             isPaused = false;
             if (pausePanel != null) pausePanel.SetActive(false);
+            HideOverlayCanvas();
             if (rig != null) rig.FreezePhysics(false);
+        }
+
+        void ShowOverlayCanvas(float alpha)
+        {
+            if (fadeCanvas == null) return;
+            fadeCanvas.alpha = alpha;
+            fadeCanvas.interactable = true;
+            fadeCanvas.blocksRaycasts = true;
+        }
+
+        void HideOverlayCanvas()
+        {
+            if (fadeCanvas == null) return;
+            fadeCanvas.alpha = 0f;
+            fadeCanvas.interactable = false;
+            fadeCanvas.blocksRaycasts = false;
         }
 
         // ===== Death =====
@@ -134,6 +195,9 @@ namespace SpaceClimb
             yield return Fade(1f);
             yield return new WaitForSeconds(0.15f);
 
+            // Anchor the world-space menu canvas to where the player's looking
+            // BEFORE the panel becomes visible — same reason as Pause.
+            if (menuPanelPlacement != null) menuPanelPlacement.AnchorNow();
             if (deathPanel != null)
             {
                 deathPanel.SetActive(true);
@@ -165,6 +229,7 @@ namespace SpaceClimb
                 yield return winAnimation.Play();
 
             yield return Fade(0.45f);
+            if (menuPanelPlacement != null) menuPanelPlacement.AnchorNow();
             if (winPanel != null) winPanel.SetActive(true);
 
             float runTime = RunElapsedSeconds;
@@ -195,6 +260,15 @@ namespace SpaceClimb
         IEnumerator Fade(float target)
         {
             if (fadeCanvas == null) yield break;
+            // Any visible target needs raycasts so child panels (death, win)
+            // can receive the XR ray ray. The fade itself doesn't gate
+            // interaction — without these flags, the panels show but no
+            // button click ever lands.
+            if (target > 0f)
+            {
+                fadeCanvas.interactable = true;
+                fadeCanvas.blocksRaycasts = true;
+            }
             float start = fadeCanvas.alpha;
             float t = 0f;
             while (t < fadeDuration)
@@ -206,6 +280,11 @@ namespace SpaceClimb
                 yield return null;
             }
             fadeCanvas.alpha = target;
+            if (target <= 0f)
+            {
+                fadeCanvas.interactable = false;
+                fadeCanvas.blocksRaycasts = false;
+            }
         }
 
         static string FormatTime(float t)

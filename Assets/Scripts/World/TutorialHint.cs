@@ -13,8 +13,13 @@ namespace SpaceClimb
     {
         [SerializeField] string line1 = "GRIP TO GRAB";
         [SerializeField] string line2 = "RELEASE TO DRIFT";
+        [Tooltip("Optional third line — typically used for the menu-button reminder.")]
+        [SerializeField] string line3 = "B / Y  →  MENU";
+        [Tooltip("Optional fourth line — typically used to point at the goal.")]
+        [SerializeField] string line4 = "DOCK WITH THE STATION TO WIN";
         [SerializeField] float fontSize = 0.6f;
         [SerializeField] Color textColor = new(0.85f, 0.95f, 1f, 1f);
+        [SerializeField] Color accentColor = new(1.0f, 0.85f, 0.35f, 1f);
         [SerializeField] float fadeOutDuration = 1.5f;
 
         TMP_Text label;
@@ -29,7 +34,13 @@ namespace SpaceClimb
             go.transform.SetParent(transform, false);
             go.transform.localPosition = Vector3.zero;
             label = go.AddComponent<TextMeshPro>();
-            label.text = $"<size=120%><b>{line1}</b></size>\n<size=80%>{line2}</size>";
+            string accentHex = ColorUtility.ToHtmlStringRGB(accentColor);
+            var sb = new System.Text.StringBuilder(192);
+            sb.Append($"<size=120%><b>{line1}</b></size>");
+            if (!string.IsNullOrEmpty(line2)) sb.Append($"\n<size=85%>{line2}</size>");
+            if (!string.IsNullOrEmpty(line3)) sb.Append($"\n<size=85%><color=#{accentHex}>{line3}</color></size>");
+            if (!string.IsNullOrEmpty(line4)) sb.Append($"\n<size=70%>{line4}</size>");
+            label.text = sb.ToString();
             label.fontSize = fontSize;
             label.alignment = TextAlignmentOptions.Center;
             label.color = textColor;

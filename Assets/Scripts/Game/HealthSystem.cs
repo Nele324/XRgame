@@ -15,10 +15,20 @@ namespace SpaceClimb
     {
         [SerializeField] ZeroGRig rig;
         [SerializeField] float maxHealth = 100f;
-        [Tooltip("HP per (m/s) above the impact threshold.")]
-        [SerializeField] float damagePerImpactUnit = 6f;
-        [Tooltip("Below this relative speed, impacts are bumps and don't damage.")]
-        [SerializeField] float minImpactForDamage = 2f;
+        [Tooltip("Flat damage per qualifying impact. Default 12.5 means the " +
+            "player can soak 8 hard hits before dying at the default 100 HP.")]
+        [SerializeField] float damagePerHit = 12.5f;
+        [Tooltip("Below this relative speed (m/s), impacts are bumps and don't " +
+            "damage. 4 m/s is roughly half the rig's max drift cap — soft " +
+            "brushes pass through, committed slams cost HP.")]
+        [SerializeField] float minImpactForDamage = 4f;
+        [Tooltip("Seconds between damaging hits. Without a cooldown, a single " +
+            "physical impact often produces two or three OnCollisionEnter " +
+            "events as the rig bounces and re-contacts before separating, " +
+            "eating multiple HP per visual hit.")]
+        [SerializeField] float hitCooldown = 0.5f;
+
+        float lastHitTime = -999f;
 
         public float Health { get; private set; }
         public float MaxHealth => maxHealth;
@@ -47,8 +57,9 @@ namespace SpaceClimb
         void HandleImpact(float relativeSpeed)
         {
             if (relativeSpeed < minImpactForDamage) return;
-            float dmg = (relativeSpeed - minImpactForDamage) * damagePerImpactUnit;
-            ApplyDamage(dmg);
+            if (Time.time < lastHitTime + hitCooldown) return;
+            lastHitTime = Time.time;
+            ApplyDamage(damagePerHit);
         }
 
         public void ApplyDamage(float amount)

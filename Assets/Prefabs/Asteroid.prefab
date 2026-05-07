@@ -545,7 +545,7 @@ LODGroup:
     fadeTransitionWidth: 0
     renderers:
     - renderer: {fileID: 1205471337441710236}
-  - screenRelativeHeight: 0.01
+  - screenRelativeHeight: 0
     fadeTransitionWidth: 0
     renderers:
     - renderer: {fileID: 6117834458075051937}
@@ -651,6 +651,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1606585826954916684}
   - component: {fileID: 5201939206979870128}
+  - component: {fileID: 2850696965004143785}
   m_Layer: 10
   m_Name: Asteroid
   m_TagString: Asteroid
@@ -687,3 +688,50 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SpaceClimb.Asteroid
   isHazard: 0
+  weight: 0
+  behavior: 0
+  heavyMass: 200
+  heavyDrag: 4
+  heavyAngularDrag: 6
+  mediumMass: 20
+  mediumDrag: 1.5
+  mediumAngularDrag: 2.5
+  lightMass: 3
+  lightDrag: 0.6
+  lightAngularDrag: 1
+  spinAxis: {x: 0, y: 1, z: 0}
+  spinDegPerSec: 30
+  driftAxis: {x: 1, y: 0, z: 0}
+  driftAmplitude: 3
+  driftFrequency: 0.08
+  driftPhase01: 0
+  hazardEmission: {r: 1.2, g: 0.15, b: 0.05, a: 1}
+  hazardEmissionIntensity: 2.5
+  hazardPulseSpeed: 1.6
+--- !u!54 &2850696965004143785
+Rigidbody:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7295876215144381655}
+  serializedVersion: 5
+  m_Mass: 1
+  m_LinearDamping: 0
+  m_AngularDamping: 0.05
+  m_CenterOfMass: {x: 0, y: 0, z: 0}
+  m_InertiaTensor: {x: 1, y: 1, z: 1}
+  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ImplicitCom: 1
+  m_ImplicitTensor: 1
+  m_UseGravity: 1
+  m_IsKinematic: 0
+  m_Interpolate: 0
+  m_Constraints: 0
+  m_CollisionDetection: 0

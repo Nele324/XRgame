@@ -57,9 +57,16 @@ namespace SpaceClimb
         [SerializeField] float driftPhase01;
 
         [Header("Hazard visual")]
-        [SerializeField] Color hazardEmission = new(1.2f, 0.15f, 0.05f, 1f);
-        [SerializeField] float hazardEmissionIntensity = 2.5f;
+        [SerializeField] Color hazardEmission = new(1.6f, 0.10f, 0.02f, 1f);
+        [SerializeField] float hazardEmissionIntensity = 5.0f;
         [SerializeField] float hazardPulseSpeed = 1.6f;
+        [Tooltip("Spawned as a child of every hazard at Awake — gives the rock " +
+            "a clear red glow at distance, when the emission alone is hard to " +
+            "see against the bright skybox. Range scales with the asteroid's " +
+            "world bounds so big hazards illuminate further.")]
+        [SerializeField] bool spawnHazardLight = true;
+        [SerializeField] float hazardLightIntensity = 4f;
+        [SerializeField] float hazardLightRangeBase = 6f;
 
         Rigidbody body;
         Vector3 driftStartPos;
@@ -80,7 +87,19 @@ namespace SpaceClimb
         {
             behavior = b;
             if (b == AsteroidBehavior.Spinning) { spinAxis = axis; spinDegPerSec = magnitude; }
-            else if (b == AsteroidBehavior.Drifting) { driftAxis = axis; driftAmplitude = magnitude; }
+            else if (b == AsteroidBehavior.Drifting)
+            {
+                driftAxis = axis;
+                driftAmplitude = magnitude;
+                // Re-capture the drift origin from the CURRENT transform. Without
+                // this, drifters oscillate around the prefab's default origin
+                // (0,0,0) — Awake fires inside Instantiate before the generator
+                // has had a chance to move the GameObject to its placement
+                // position, so ConfigureBehavior captured driftStartPos at
+                // (0,0,0). FixedUpdate then snaps the asteroid back near origin
+                // each tick. Setting driftStartPos here fixes that.
+                driftStartPos = transform.position;
+            }
         }
 
         void Reset()
@@ -106,7 +125,28 @@ namespace SpaceClimb
                 hazardRenderers = GetComponentsInChildren<Renderer>();
                 hazardMpb = new MaterialPropertyBlock();
                 ApplyHazardEmission(1f);
+                if (spawnHazardLight) SpawnHazardLight();
             }
+        }
+
+        void SpawnHazardLight()
+        {
+            // Range derived from any renderer's bounds so giant hazards
+            // illuminate further than handhold-sized ones. Falls back to a
+            // sensible default when bounds aren't ready yet.
+            float radius = 1f;
+            if (hazardRenderers != null && hazardRenderers.Length > 0)
+                radius = Mathf.Max(0.5f, hazardRenderers[0].bounds.extents.magnitude);
+            var go = new GameObject("HazardLight");
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = Vector3.zero;
+            var light = go.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.color = new Color(1f, 0.18f, 0.05f);
+            light.intensity = hazardLightIntensity;
+            light.range = hazardLightRangeBase + radius * 2.5f;
+            light.shadows = LightShadows.None;       // VR perf — point shadows are expensive
+            light.renderMode = LightRenderMode.Auto;
         }
 
         /// <summary>
@@ -152,8 +192,16 @@ namespace SpaceClimb
             switch (behavior)
             {
                 case AsteroidBehavior.Static:
-                    // Default — relies on weight-tier damping to settle disturbances.
-                    body.isKinematic = false;
+                    // ALL Static asteroids are kinematic. Reason: dynamic-vs-
+                    // dynamic contact between adjacent placed rocks causes
+                    // visible micro-jiggle and visual interpenetration ("rocks
+                    // grinding on each other"), which ruins the stillness of a
+                    // zero-G handhold field. Kinematic anchors get the player
+                    // a full rig-pull on grab — same gameplay feel as Heavy was
+                    // before — and they can't drift or be pushed by neighbors.
+                    // Throwable rocks would need a dedicated AsteroidWeight
+                    // tier or a separate "Loose" behavior; defer until needed.
+                    body.isKinematic = true;
                     break;
                 case AsteroidBehavior.Spinning:
                     // Non-kinematic so we can drive angularVelocity. Zero angular damping
@@ -214,15 +262,20 @@ namespace SpaceClimb
 
         void OnCollisionEnter(Collision collision)
         {
-            // Hazard touch is fatal. We rely on the player Rigidbody being non-null
-            // and carrying ZeroGRig — guards keep ambient asteroid-asteroid collisions safe.
+            // Hazard contact plays a danger cue but no longer insta-kills.
+            // The unified speed-based damage in HealthSystem (flat 12.5 HP per
+            // hard hit, 8 hits = death) handles consequences. The red glow +
+            // light + sound preserves the "danger zone" reading while letting
+            // the player recover from a brush.
             if (!isHazard) return;
             var other = collision.rigidbody;
             if (other == null) return;
             if (other.GetComponent<ZeroGRig>() == null) return;
-            AudioCues.PlayHazard();
-            if (GameStateController.Instance != null)
-                GameStateController.Instance.Die(DeathCause.Hazard);
+            // Suppress the hazard sting on near-zero contacts (e.g. settling
+            // asteroids touching at low speed) — we only want it to fire on
+            // contacts the player will actually feel.
+            if (collision.relativeVelocity.sqrMagnitude > 1f)
+                AudioCues.PlayHazard();
         }
     }
 }
