@@ -57,11 +57,24 @@ namespace SpaceClimb
         bool isPaused;
         float runStartTime;
         float runEndTime;
+        // Accumulated seconds spent in pause across the whole run. Subtracted
+        // from elapsed time so the speedrun timer doesn't count paused frames.
+        float pausedAccumulated;
+        float pauseStartTime;
         int lastPauseInputFrame = -1;
 
         public bool IsRunActive => !isDying && !hasWon && !isPaused;
-        /// <summary>Seconds elapsed since the run started, or final time if the run ended.</summary>
-        public float RunElapsedSeconds => hasWon ? (runEndTime - runStartTime) : (Time.time - runStartTime);
+        /// <summary>Seconds elapsed since the run started, excluding pause time, or final time if the run ended.</summary>
+        public float RunElapsedSeconds
+        {
+            get
+            {
+                float endRef = hasWon ? runEndTime : Time.time;
+                float live = endRef - runStartTime - pausedAccumulated;
+                if (isPaused) live -= (Time.time - pauseStartTime);
+                return Mathf.Max(0f, live);
+            }
+        }
 
         void Awake()
         {
@@ -140,6 +153,7 @@ namespace SpaceClimb
         {
             if (isPaused || hasWon || isDying) return;
             isPaused = true;
+            pauseStartTime = Time.time;
             if (rig != null) rig.FreezePhysics(true);
             // Fade canvas was at alpha 0 the whole game (set in Awake) — without
             // this, SetActive(true) on the panel makes it active but the parent
@@ -157,6 +171,9 @@ namespace SpaceClimb
         {
             if (!isPaused) return;
             isPaused = false;
+            // Roll the time spent paused into the accumulator so the timer
+            // resumes from where it left off instead of jumping forward.
+            pausedAccumulated += Time.time - pauseStartTime;
             if (pausePanel != null) pausePanel.SetActive(false);
             HideOverlayCanvas();
             if (rig != null) rig.FreezePhysics(false);
@@ -235,24 +252,33 @@ namespace SpaceClimb
             float runTime = RunElapsedSeconds;
             if (winTimeLabel != null) winTimeLabel.text = "Time: " + FormatTime(runTime);
 
-            // Best-time tracking. Speedrun mode is the toggle but we record the
-            // time regardless so casual runs can still set a baseline.
-            bool isRecord = false;
-            float prevBest = 0f;
+            // Top-3 leaderboard tracking. We record every successful run so the
+            // leaderboard fills up even outside Speedrun mode.
+            int rank = 0;
             if (SettingsManager.Instance != null)
-            {
-                prevBest = SettingsManager.Instance.BestTime;
-                isRecord = SettingsManager.Instance.TrySetBestTime(runTime);
-            }
+                rank = SettingsManager.Instance.TrySetTopTime(runTime);
+
             if (winBestLabel != null)
+                winBestLabel.text = BuildLeaderboardText(rank);
+        }
+
+        static string BuildLeaderboardText(int newRank)
+        {
+            var s = SettingsManager.Instance;
+            if (s == null) return "";
+            var top = s.TopTimes;
+            var sb = new System.Text.StringBuilder();
+            if (newRank > 0)
+                sb.AppendLine($"<color=#FFC857>NEW RECORD — #{newRank}</color>");
+            sb.AppendLine("<size=70%>TOP 3</size>");
+            for (int i = 0; i < top.Count; i++)
             {
-                if (isRecord)
-                    winBestLabel.text = "<color=#FFC857>NEW RECORD!</color>";
-                else if (prevBest > 0f)
-                    winBestLabel.text = "Best: " + FormatTime(prevBest);
-                else
-                    winBestLabel.text = "";
+                string time = top[i] > 0f ? FormatTime(top[i]) : "--:--.--";
+                string highlight = (i + 1 == newRank) ? "<color=#FFC857>" : "";
+                string close = (i + 1 == newRank) ? "</color>" : "";
+                sb.AppendLine($"{highlight}{i + 1}.  {time}{close}");
             }
+            return sb.ToString().TrimEnd();
         }
 
         // ===== Helpers =====

@@ -68,6 +68,12 @@ namespace SpaceClimb
         [SerializeField] float hazardLightIntensity = 4f;
         [SerializeField] float hazardLightRangeBase = 6f;
 
+        [Header("Hazard damage")]
+        [Tooltip("HP drained per tick while the player is holding or pressed against this hazard.")]
+        [SerializeField] float hazardTickDamage = 5f;
+        [Tooltip("Seconds between damage ticks. 1s gives the player time to release before dying.")]
+        [SerializeField] float hazardTickInterval = 1f;
+
         Rigidbody body;
         Vector3 driftStartPos;
         float driftTimeOffset;
@@ -75,14 +81,54 @@ namespace SpaceClimb
         MaterialPropertyBlock hazardMpb;
         static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
 
+        // Hazard damage state. grabberCount is incremented/decremented by
+        // ZeroGGrabber when this hazard is grabbed/released. playerInBodyContact
+        // tracks rig-body collisions via OnCollisionEnter/Exit. Either source
+        // accrues hazard time; the timer drains 5 HP per second of total
+        // exposure, regardless of whether the player is holding, leaning on,
+        // or both.
+        int grabberCount;
+        bool playerInBodyContact;
+        float hazardContactAccumulated;
+        HealthSystem cachedRigHealth;
+
         public bool IsHazard => isHazard;
         public AsteroidWeight Weight => weight;
         public AsteroidBehavior Behavior => behavior;
         public Rigidbody Body => body;
 
         // Setters used by the procedural generator (sets values before scene is saved).
-        public void SetWeight(AsteroidWeight w)   { weight = w; }
-        public void SetHazard(bool hazard)        { isHazard = hazard; }
+        public void SetWeight(AsteroidWeight w)   { weight = w; ApplyWeight(); }
+        public void SetHazard(bool hazard)
+        {
+            isHazard = hazard;
+            // The visual + light setup lives in Awake's hazard branch, which has
+            // already run by the time the generator flags an asteroid via
+            // AssignOnPathHazards. Without this re-init, hazard rocks stayed
+            // visually identical to normal ones — same mesh, no red glow, no
+            // point light — so the player had no warning before contact.
+            if (hazard && body != null && hazardRenderers == null)
+            {
+                hazardRenderers = GetComponentsInChildren<Renderer>();
+                hazardMpb = new MaterialPropertyBlock();
+                // The shared asteroid material has _EMISSION stripped (URP/Lit
+                // does this whenever the baseline _EmissionColor is black). Without
+                // the keyword the shader never samples MPB-driven emission, so the
+                // red glow we set later is invisible. Promote each renderer to a
+                // per-instance material copy and enable the keyword on it. Per-
+                // instance is fine here — there are only a handful of hazards.
+                for (int i = 0; i < hazardRenderers.Length; i++)
+                {
+                    var r = hazardRenderers[i];
+                    if (r == null) continue;
+                    var instanced = r.material;     // creates per-instance copy
+                    instanced.EnableKeyword("_EMISSION");
+                    instanced.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+                }
+                ApplyHazardEmission(1f);
+                if (spawnHazardLight) SpawnHazardLight();
+            }
+        }
         public void SetBehavior(AsteroidBehavior b, Vector3 axis, float magnitude)
         {
             behavior = b;
@@ -100,6 +146,13 @@ namespace SpaceClimb
                 // each tick. Setting driftStartPos here fixes that.
                 driftStartPos = transform.position;
             }
+            // Re-run the rigidbody/kinematic setup. Awake's ConfigureBehavior
+            // ran with the prefab's default (Static / kinematic=true), so
+            // without this, Spinning asteroids stay kinematic and FixedUpdate's
+            // angularVelocity assignment has no physics effect — i.e. spinners
+            // never visibly spin. Drifting needs the start-pos re-capture above
+            // anyway, and Static is a no-op since it was already configured.
+            ConfigureBehavior();
         }
 
         void Reset()
@@ -245,7 +298,38 @@ namespace SpaceClimb
             if (!isHazard || hazardRenderers == null) return;
             float t = 0.6f + 0.4f * Mathf.PerlinNoise(Time.time * hazardPulseSpeed, transform.position.y * 0.1f);
             ApplyHazardEmission(t);
+
+            // Tick damage while the player is in any form of contact. Accumulate
+            // delta time and fire one damage event per interval — this gives the
+            // player a clear "leave the rock or die" beat instead of melting them
+            // a hundredth of HP per frame.
+            bool exposed = grabberCount > 0 || playerInBodyContact;
+            if (!exposed) { hazardContactAccumulated = 0f; return; }
+            hazardContactAccumulated += Time.deltaTime;
+            if (hazardContactAccumulated >= hazardTickInterval)
+            {
+                hazardContactAccumulated -= hazardTickInterval;
+                ApplyHazardTick();
+            }
         }
+
+        void ApplyHazardTick()
+        {
+            if (cachedRigHealth == null)
+            {
+                var rig = UnityEngine.Object.FindFirstObjectByType<ZeroGRig>();
+                if (rig != null) cachedRigHealth = rig.GetComponent<HealthSystem>();
+            }
+            if (cachedRigHealth != null) cachedRigHealth.ApplyDamage(hazardTickDamage);
+            // Punchy feedback so the player feels the hit even with no health bar visible.
+            HapticBus.PulseAll(0.95f, 0.18f);
+            AudioCues.PlayHazard();
+        }
+
+        /// <summary>Called by ZeroGGrabber when a hand grabs this hazard. Drives the tick-damage loop.</summary>
+        public void NotifyGrabbed() { if (isHazard) grabberCount++; }
+        /// <summary>Called by ZeroGGrabber when a hand releases this hazard.</summary>
+        public void NotifyReleased() { if (isHazard) grabberCount = Mathf.Max(0, grabberCount - 1); }
 
         void ApplyHazardEmission(float pulse)
         {
@@ -262,20 +346,25 @@ namespace SpaceClimb
 
         void OnCollisionEnter(Collision collision)
         {
-            // Hazard contact plays a danger cue but no longer insta-kills.
-            // The unified speed-based damage in HealthSystem (flat 12.5 HP per
-            // hard hit, 8 hits = death) handles consequences. The red glow +
-            // light + sound preserves the "danger zone" reading while letting
-            // the player recover from a brush.
             if (!isHazard) return;
             var other = collision.rigidbody;
             if (other == null) return;
             if (other.GetComponent<ZeroGRig>() == null) return;
-            // Suppress the hazard sting on near-zero contacts (e.g. settling
-            // asteroids touching at low speed) — we only want it to fire on
-            // contacts the player will actually feel.
+            playerInBodyContact = true;
+            // Sting on real hits only — quiet brush contacts.
             if (collision.relativeVelocity.sqrMagnitude > 1f)
                 AudioCues.PlayHazard();
+        }
+
+        void OnCollisionExit(Collision collision)
+        {
+            if (!isHazard) return;
+            var other = collision.rigidbody;
+            if (other == null) return;
+            if (other.GetComponent<ZeroGRig>() == null) return;
+            playerInBodyContact = false;
+            // Reset accumulator so re-touching the rock doesn't get a partial-second head start.
+            hazardContactAccumulated = 0f;
         }
     }
 }

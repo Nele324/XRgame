@@ -92,7 +92,12 @@ namespace SpaceClimb
         {
             if (turnModeLabel == null) return;
             bool smooth = turnModeToggle != null && turnModeToggle.isOn;
-            turnModeLabel.text = smooth ? "Smooth Turn" : "Snap Turn";
+            // Why two lines: the main word is the current mode, the subtitle explains
+            // the trade-off. New VR users default to Snap because continuous rotation
+            // is a common motion-sickness trigger.
+            turnModeLabel.text = smooth
+                ? "Smooth\n<size=58%><color=#A8B2BE>Continuous turning</color></size>"
+                : "Snap\n<size=58%><color=#A8B2BE>Step rotation (recommended)</color></size>";
         }
 
         void UpdateVolumeLabel(float v)

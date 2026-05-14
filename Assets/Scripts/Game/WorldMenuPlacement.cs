@@ -34,7 +34,16 @@ namespace SpaceClimb
             "headset wakes up — anchoring once at frame 0 can lock onto a " +
             "stale (0,0,0) pose. The component disables itself after this " +
             "window so the menu doesn't follow the player around.")]
-        [SerializeField] float settleSeconds = 0.5f;
+        [SerializeField] float settleSeconds = 2f;
+        [Tooltip("If the camera Y is below this height (m), assume the headset " +
+            "pose hasn't been received yet and substitute this as the eye " +
+            "height. Why: with Floor tracking origin, an untracked headset " +
+            "reports Y=0, which would anchor the menu near the floor. Using a " +
+            "sensible default keeps the menu at a reasonable height even if " +
+            "the player puts the headset on after the scene loads.")]
+        [SerializeField] float minEyeHeight = 1.0f;
+        [Tooltip("Eye height to use when the camera pose is invalid (m).")]
+        [SerializeField] float fallbackEyeHeight = 1.65f;
 
         Camera cam;
         float endTime;
@@ -68,6 +77,10 @@ namespace SpaceClimb
         void Anchor()
         {
             if (cam == null) { cam = Camera.main; if (cam == null) return; }
+            Vector3 camPos = cam.transform.position;
+            // Floor-tracked rig reports Y=0 before the headset is tracked.
+            // Substitute a sensible eye height so the menu doesn't lock low.
+            if (camPos.y < minEyeHeight) camPos.y = fallbackEyeHeight;
             Vector3 fwd = cam.transform.forward;
             if (levelHorizontal)
             {
@@ -76,12 +89,12 @@ namespace SpaceClimb
                 fwd.Normalize();
             }
             Vector3 right = Vector3.Cross(Vector3.up, fwd).normalized;
-            Vector3 pos = cam.transform.position
+            Vector3 pos = camPos
                           + fwd * distance
                           + Vector3.up * verticalOffset
                           + right * horizontalOffset;
             transform.position = pos;
-            Vector3 toCam = cam.transform.position - transform.position;
+            Vector3 toCam = camPos - transform.position;
             if (levelHorizontal) toCam.y = 0f;
             if (toCam.sqrMagnitude > 1e-4f)
                 transform.rotation = Quaternion.LookRotation(-toCam.normalized, Vector3.up);

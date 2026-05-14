@@ -50,6 +50,13 @@ namespace SpaceClimb
             "starters for placement and most get dropped.")]
         [SerializeField] float yStart = 7f;
         [SerializeField] float yEnd = 200f;
+        [Tooltip("Tilt the climb path off vertical so the player has to traverse " +
+            "sideways as they climb. 0 = straight up; 30 = path leans 30° from " +
+            "vertical (climbing at 60° from horizontal).")]
+        [Range(0f, 75f)][SerializeField] float pathTiltDegrees = 30f;
+        [Tooltip("Horizontal direction the path leans toward as it ascends. " +
+            "Default +X — change to angle the station to a different side.")]
+        [SerializeField] Vector3 pathTiltDirection = Vector3.right;
         [Tooltip("Number of control points the path interpolates between. More = wigglier path.")]
         [SerializeField] int pathControlPoints = 8;
         [Tooltip("Maximum horizontal deviation of any control point from x=0,z=0. " +
@@ -153,6 +160,12 @@ namespace SpaceClimb
 
         // ---- Internal state during one Generate() ----
         Vector3[] controlPoints;
+        // Cached rotation applied by PathAt/TangentAt to map "path-local"
+        // coordinates (where the path runs straight up the local Y axis) to
+        // world. Control points are stored in the unrotated local frame so
+        // the y-monotone segment lookup keeps working unchanged.
+        Quaternion pathRotation = Quaternion.identity;
+        Vector3 pathOrigin = Vector3.zero;
         System.Random rng;
         readonly List<Vector3> placed = new();
         readonly List<float> placedRadii = new();          // parallel to `placed`
@@ -192,6 +205,7 @@ namespace SpaceClimb
             placed.Clear();
             placedRadii.Clear();
             generated.Clear();
+            EnsurePathFrame();
             BuildExternalAvoid();
 
             BuildControlPoints();
@@ -263,34 +277,64 @@ namespace SpaceClimb
             }
         }
 
-        /// <summary>Smoothstep-interpolated point on the path at world Y.</summary>
-        Vector3 PathAt(float y)
+        /// <summary>Compute pathRotation/pathOrigin from inspector values.</summary>
+        void EnsurePathFrame()
         {
-            if (controlPoints == null || controlPoints.Length < 2) return new Vector3(0, y, 0);
-            // Find segment by walking the y-monotone control point list.
-            for (int i = 0; i < controlPoints.Length - 1; i++)
-            {
-                Vector3 a = controlPoints[i];
-                Vector3 b = controlPoints[i + 1];
-                if (y >= a.y && y <= b.y)
-                {
-                    float t = Mathf.InverseLerp(a.y, b.y, y);
-                    float s = Mathf.SmoothStep(0f, 1f, t);
-                    return new Vector3(Mathf.Lerp(a.x, b.x, s), y, Mathf.Lerp(a.z, b.z, s));
-                }
-            }
-            // Out of range — return endpoint clamped at correct y.
-            var last = controlPoints[controlPoints.Length - 1];
-            return new Vector3(last.x, y, last.z);
+            pathOrigin = Vector3.zero;
+            Vector3 dir = pathTiltDirection;
+            dir.y = 0f;
+            dir = dir.sqrMagnitude < 1e-4f ? Vector3.right : dir.normalized;
+            float a = pathTiltDegrees * Mathf.Deg2Rad;
+            // The path's local up (0,1,0) maps to this world direction. Mostly
+            // vertical, with a horizontal component pointing toward `dir`. With
+            // tilt=0 this is straight up — i.e., the original behavior.
+            Vector3 desiredUp = (Vector3.up * Mathf.Cos(a) + dir * Mathf.Sin(a)).normalized;
+            pathRotation = Quaternion.FromToRotation(Vector3.up, desiredUp);
         }
 
-        /// <summary>Local "up" direction along the path (mostly y, with x/z drift contribution).</summary>
+        /// <summary>Smoothstep-interpolated point on the path at path-local Y, returned in world space.</summary>
+        Vector3 PathAt(float y)
+        {
+            Vector3 local;
+            if (controlPoints == null || controlPoints.Length < 2)
+            {
+                local = new Vector3(0, y, 0);
+            }
+            else
+            {
+                local = new Vector3(0, y, 0);
+                bool found = false;
+                // Find segment by walking the y-monotone control point list.
+                for (int i = 0; i < controlPoints.Length - 1; i++)
+                {
+                    Vector3 a = controlPoints[i];
+                    Vector3 b = controlPoints[i + 1];
+                    if (y >= a.y && y <= b.y)
+                    {
+                        float t = Mathf.InverseLerp(a.y, b.y, y);
+                        float s = Mathf.SmoothStep(0f, 1f, t);
+                        local = new Vector3(Mathf.Lerp(a.x, b.x, s), y, Mathf.Lerp(a.z, b.z, s));
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                {
+                    // Out of range — return endpoint clamped at correct y.
+                    var last = controlPoints[controlPoints.Length - 1];
+                    local = new Vector3(last.x, y, last.z);
+                }
+            }
+            return pathOrigin + pathRotation * local;
+        }
+
+        /// <summary>"Up" direction along the (possibly tilted) path at path-local Y.</summary>
         Vector3 TangentAt(float y)
         {
             Vector3 a = PathAt(y - 0.5f);
             Vector3 b = PathAt(y + 0.5f);
             Vector3 t = b - a;
-            return t.sqrMagnitude < 1e-4f ? Vector3.up : t.normalized;
+            return t.sqrMagnitude < 1e-4f ? pathRotation * Vector3.up : t.normalized;
         }
 
         // ===== Placement =====
@@ -340,6 +384,13 @@ namespace SpaceClimb
                 float s = Mathf.Sin(angleFromForward);
                 Vector3 offset = new Vector3(s * centerDist, starterHeightOffset, -c * centerDist);
                 Vector3 pos = spawn + offset;
+
+                // Skip starters that would land too close to the fixed Satellite
+                // anchor — those two showed up "under" the satellite and read as
+                // a placement bug. CanPlace already enforces this via externalAvoid
+                // for procedural rocks; starters bypass that check, so we apply
+                // it here explicitly.
+                if (!CanPlace(pos, radius)) continue;
 
                 // Static + Heavy = fixed handhold (kinematic landmark, see Asteroid.ConfigureBehavior).
                 SpawnAsteroid(pos, scale, AsteroidWeight.Heavy, AsteroidBehavior.Static, false);

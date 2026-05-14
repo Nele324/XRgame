@@ -16,6 +16,13 @@ namespace SpaceClimb
         [Tooltip("Degrees per second. Slow rotation looks majestic; fast looks like a wobbly toy.")]
         [SerializeField] float earthSpinSpeed = 6f;
 
+        [Header("Panel swap")]
+        [Tooltip("Items belonging to the main menu (title, buttons, leaderboard, controls hint). " +
+            "Hidden when the settings panel is shown so they don't render through each other.")]
+        [SerializeField] GameObject[] mainPanelItems;
+        [Tooltip("Settings panel root. Toggled in tandem with mainPanelItems.")]
+        [SerializeField] GameObject settingsPanel;
+
         void Update()
         {
             if (earthDiorama != null)
@@ -36,6 +43,23 @@ namespace SpaceClimb
 #else
             Application.Quit();
 #endif
+        }
+
+        /// <summary>Wired to the SETTINGS button. Hides main UI, shows settings panel.</summary>
+        public void OpenSettings() => SetSettingsVisible(true);
+
+        /// <summary>Wired to the SettingsPanel's BACK button. Restores main UI.</summary>
+        public void CloseSettings() => SetSettingsVisible(false);
+
+        void SetSettingsVisible(bool showSettings)
+        {
+            if (mainPanelItems != null)
+            {
+                for (int i = 0; i < mainPanelItems.Length; i++)
+                    if (mainPanelItems[i] != null)
+                        mainPanelItems[i].SetActive(!showSettings);
+            }
+            if (settingsPanel != null) settingsPanel.SetActive(showSettings);
         }
     }
 }

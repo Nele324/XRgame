@@ -72,7 +72,11 @@ namespace SpaceClimb
             // TryGetHapticCapabilities is cheap and the only way to know if the
             // controller supports impulses (some hand-tracking-only devices don't).
             if (!device.TryGetHapticCapabilities(out var caps) || !caps.supportsImpulse) return;
-            device.SendHapticImpulse(0u, Mathf.Clamp01(amplitude * amplitudeScale), duration);
+            // Apply per-hand and global strength multipliers. Quest clamps to 1
+            // internally; we clamp here too so very small inputs don't get lost
+            // to subnormal float behavior.
+            float final = Mathf.Clamp01(amplitude * amplitudeScale * HapticBus.Strength);
+            device.SendHapticImpulse(0u, final, duration);
         }
     }
 }

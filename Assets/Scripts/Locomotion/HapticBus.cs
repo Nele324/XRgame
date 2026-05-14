@@ -18,6 +18,15 @@ namespace SpaceClimb
         // 2 (left + right hand) and we want stable iteration order.
         static readonly List<HandedHaptics> players = new();
 
+        /// <summary>
+        /// Global multiplier applied to every haptic amplitude. Quest controller
+        /// amplitudes are clamped to 1, so callers passing 0.3–0.7 benefit most;
+        /// strong pulses (already at 1) stay capped. Bumped above 1 so the
+        /// average rumble feels meatier without forcing every call site to
+        /// re-tune its own amplitude.
+        /// </summary>
+        public static float Strength { get; set; } = 1.6f;
+
         public static void Register(HandedHaptics h)
         {
             if (h != null && !players.Contains(h)) players.Add(h);
@@ -28,7 +37,9 @@ namespace SpaceClimb
             players.Remove(h);
         }
 
-        /// <summary>Pulse every registered hand simultaneously.</summary>
+        /// <summary>Pulse every registered hand simultaneously. The global Strength
+        /// multiplier is applied inside HandedHaptics.Pulse, so callers pass the
+        /// raw amplitude they want and don't have to know about Strength.</summary>
         public static void PulseAll(float amplitude, float duration)
         {
             // Defensive null check inside the loop — a HandedHaptics could be

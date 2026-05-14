@@ -56,6 +56,7 @@ namespace SpaceClimb
         Transform grabbedSurface;
         Vector3 grabbedLocalPos;
         Rigidbody grabbedBody;          // cached so we don't search the parent chain each tick
+        Asteroid grabbedAsteroid;       // cached asteroid component; null when grabbing non-asteroid colliders
         bool isGrabbed;
 
         // Proximity state. We highlight the nearest grabbable in proximity range
@@ -266,6 +267,8 @@ namespace SpaceClimb
             grabbedSurface = best.transform;
             grabbedLocalPos = best.transform.InverseTransformPoint(bestPoint);
             grabbedBody = best.attachedRigidbody;       // cache; null = static surface
+            grabbedAsteroid = best.GetComponentInParent<Asteroid>();
+            if (grabbedAsteroid != null) grabbedAsteroid.NotifyGrabbed();
             isGrabbed = true;
 
             // Reset the surface-tracking buffer for the new grab.
@@ -289,6 +292,8 @@ namespace SpaceClimb
             Rigidbody asteroid = grabbedBody;
             Vector3 asteroidExitVelocity = EstimateSurfaceVelocity();
 
+            if (grabbedAsteroid != null) grabbedAsteroid.NotifyReleased();
+            grabbedAsteroid = null;
             isGrabbed = false;
             grabbedSurface = null;
             grabbedBody = null;
