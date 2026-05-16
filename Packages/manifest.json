@@ -1,6 +1,10 @@
 {
   "dependencies": {
     "com.coplaydev.unity-mcp": "https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#main",
+    "com.meta.xr.mrutilitykit": "201.0.0",
+    "com.meta.xr.sdk.all": "201.0.0",
+    "com.meta.xr.sdk.audio": "85.0.0",
+    "com.meta.xr.sdk.haptics": "201.0.0",
     "com.unity.ai.assistant": "2.6.0-pre.1",
     "com.unity.feature.development": "1.0.2",
     "com.unity.ide.rider": "3.0.39",
